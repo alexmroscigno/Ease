@@ -38,7 +38,7 @@
   <section id="held" class="view"><div class="sectionTitle"><h2>Held</h2><button class="btn primary" onclick="openHold()">＋ Hold something</button></div><div class="cardSub" style="margin:0 2px 10px">Things can leave consciousness without being lost.</div><div id="heldAll" class="listCard"></div></section>
 </div>
 
-<div class="modal" id="taskModal"><div class="sheet"><h2 id="taskModalTitle">Add task</h2><label>Task</label><input id="taskText" placeholder="e.g. Change HVAC filter"><label>Kind</label><select id="taskKind" onchange="taskFormMode()"><option value="available">Available — no lateness</option><option value="due">Due — real date</option><option value="recurring">Recurring — one living instance</option></select><label>Area / domain</label><input id="taskDomain" placeholder="Home, Yard, Finances, Writing…"><div id="dueFields"><label>Due date</label><input id="taskDue" type="date"></div><div id="recFields"><label>Recurrence</label><select id="taskCadence"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><label>Next available</label><input id="taskNext" type="date"></div><div class="sheetActions"><button onclick="closeModal('taskModal')">Cancel</button><button class="primary" onclick="saveTask()">Save</button></div><div class="note">Recurring items never stack missed occurrences. Completing one advances the same item to its next availability.</div></div></div>
+<div class="modal" id="taskModal"><div class="sheet"><h2 id="taskModalTitle">Add task</h2><label>Task</label><input id="taskText" placeholder="e.g. Change HVAC filter"><label>Kind</label><select id="taskKind" onchange="taskFormMode()"><option value="available">Available — no lateness</option><option value="due">Due — real date</option><option value="recurring">Recurring — one living instance</option></select><label>Area / domain</label><input id="taskDomain" placeholder="Home, Yard, Finances, Writing…"><div id="dueFields"><label>Due date</label><input id="taskDue" type="date"></div><div id="recFields"><label>Recurrence</label><select id="taskCadence"><option value="daily">Daily</option><option value="weekdays">Every weekday</option><option value="weekends">Every weekend day</option><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks</option><option value="monthly">Monthly</option><option value="quarterly">Every 3 months</option><option value="yearly">Yearly</option><option value="custom">Custom interval</option></select><label>Custom interval (days)</label><input id="taskCustomDays" type="number" min="1" value="1"><label>Next available</label><input id="taskNext" type="date"></div><div class="sheetActions"><button onclick="closeModal('taskModal')">Cancel</button><button class="primary" onclick="saveTask()">Save</button></div><div class="note">Recurring items never stack missed occurrences. Completing one advances the same item to its next availability.</div></div></div>
 
 <div class="modal" id="turnModal"><div class="sheet"><h2 id="turnModalTitle">Make room</h2><label>Turn</label><input id="turnTitle" placeholder="Movement, Writing, Home…"><div class="row2"><div><label>Date</label><input id="turnDate" type="date"></div><div><label>Start time (optional)</label><input id="turnTime" type="time"></div></div><label>Open with a menu (optional)</label><select id="turnMenu"></select><div class="sheetActions"><button onclick="closeModal('turnModal')">Cancel</button><button class="primary" onclick="saveTurn()">Protect this opening</button></div><div class="note">This saves an opportunity for future-you. Future-you remains free.</div></div></div>
 
@@ -60,14 +60,42 @@ const addMonths=(s,n)=>{let d=dateObj(s);d.setMonth(d.getMonth()+n);return d.toI
 let state=loadState(); let activeFocus=null; let couldOffset=0; let onePick=null; let onePickSeen=[]; let editTaskId=null,editTurnId=null,editMenuId=null;
 
 function loadState(){
-  const raw=localStorage.getItem(KEY); if(raw){try{return normalize(JSON.parse(raw))}catch(e){}}
+  const raw=localStorage.getItem(KEY); if(raw){try{const saved=normalize(JSON.parse(raw));localStorage.setItem(KEY,JSON.stringify(saved));return saved}catch(e){}}
   const old=JSON.parse(localStorage.getItem('ease_tasks_v2')||'[]');
   const s={tasks:[],turns:[],menus:[],held:[],dayPlan:null};
   if(old.length){old.forEach(t=>{let kind=t.origin===3?'due':t.origin===4?'recurring':'available';s.tasks.push({id:t.id||id(),text:t.text,kind,domain:t.homeSection!=null?'Rhythm':'General',dueDate:t.dueDate||'',cadence:t.cadence||'weekly',nextAvailable:t.anchor||today(),done:false})})}
   else seed(s);
-  localStorage.setItem(KEY,JSON.stringify(s)); return s;
+  normalize(s);localStorage.setItem(KEY,JSON.stringify(s)); return s;
 }
-function normalize(s){s.tasks=s.tasks||[];s.turns=s.turns||[];s.menus=s.menus||[];s.held=s.held||[];s.dayPlan=s.dayPlan||null;if(!s.tasks.some(t=>(t.text||'').toLowerCase()==='clothes'))s.tasks.push({id:id(),text:'Clothes',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today(),done:false});if(!s.tasks.some(t=>(t.text||'').toLowerCase()==='closet work'))s.tasks.push({id:id(),text:'Closet work',kind:'available',domain:'Home',done:false});return s}
+function normalize(s){s.tasks=s.tasks||[];s.turns=s.turns||[];s.menus=s.menus||[];s.held=s.held||[];s.dayPlan=s.dayPlan||null;s.migrations=s.migrations||{};if(!s.tasks.some(t=>(t.text||'').toLowerCase()==='clothes'))s.tasks.push({id:id(),text:'Clothes',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today(),done:false});if(!s.tasks.some(t=>(t.text||'').toLowerCase()==='closet work'))s.tasks.push({id:id(),text:'Closet work',kind:'available',domain:'Home',done:false});addHomeCadence(s);importOldEase(s);return s}
+function addHomeCadence(s){
+ if(s.migrations.homeCadenceV1)return;
+ const weekly=['Tidy','Organize','Chickens'];
+ weekly.forEach(text=>{if(!s.tasks.some(t=>(t.text||'').toLowerCase()===text.toLowerCase()))s.tasks.push({id:id(),text,kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today(),done:false})});
+ let clean=s.tasks.find(t=>t.homeRotation==='clean'||/^clean\b/i.test(t.text||''));
+ if(clean){clean.kind='recurring';clean.domain='Home';clean.cadence='weekly';clean.nextAvailable=clean.nextAvailable||today();clean.homeRotation='clean';clean.rotationIndex=Number(clean.rotationIndex)||0;clean.text=`Clean — ${['Floors','Surfaces','Bathroom','Fridge','Containers'][clean.rotationIndex%5]}`}
+ else s.tasks.push({id:id(),text:'Clean — Floors',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today(),done:false,homeRotation:'clean',rotationIndex:0});
+ s.migrations.homeCadenceV1=true;
+}
+function importOldEase(s){
+ if(s.migrations.oldEaseDataV1)return;
+ let old;try{old=JSON.parse(localStorage.getItem('ease-data-v1')||'null')}catch(e){return}if(!old||!Array.isArray(old.tasks))return;
+ const slots={'Early Morning':{top:7,bottom:8},'Mid Morning':{top:9,bottom:10},'Late Morning':{top:11,bottom:12},'Early Afternoon':{top:13,bottom:14},'Late Afternoon':{top:15,bottom:16},'Evening':{top:17,bottom:18},'Night':{top:19,bottom:20,late:21}};
+ const placements=old.placements||{};
+ const placed=t=>{for(const day of Object.keys(placements).sort().reverse()){if(placements[day]?.[t.id])return placements[day][t.id]}return null};
+ const hourFor=t=>{const p=t.homeSection?{section:t.homeSection,lane:t.lane||'top'}:placed(t);return p&&slots[p.section]?.[p.lane||'top']};
+ const hourly={};for(let h=7;h<=21;h++)hourly[h]=[];
+ old.tasks.forEach(t=>{if(t.kind==='rhythm'){const h=hourFor(t);if(h&&t.title&&!hourly[h].some(x=>x.toLowerCase()===t.title.toLowerCase()))hourly[h].push(t.title)}});
+ const hourMenus=[];for(let h=7;h<=21;h++){const name=`${h>12?h-12:h} ${h>=12?'PM':'AM'}`;let m=s.menus.find(x=>x.name.toLowerCase()===name.toLowerCase());if(!m)m={id:id(),name,start:`${String(h).padStart(2,'0')}:00`,end:`${String(h).padStart(2,'0')}:59`,options:[]};m.start=`${String(h).padStart(2,'0')}:00`;m.end=`${String(h).padStart(2,'0')}:59`;hourly[h].forEach(x=>{if(!m.options.some(o=>o.toLowerCase()===x.toLowerCase()))m.options.push(x)});hourMenus.push(m)}
+ s.menus=s.menus.filter(m=>!hourMenus.includes(m));s.menus.unshift(...hourMenus);
+ old.tasks.forEach(t=>{
+  if(!t.title||t.kind==='rhythm'||t.done)return;
+  const kind=t.kind==='scheduled'?'due':t.kind==='recurring'?'recurring':'available';
+  if(!s.tasks.some(x=>(x.text||'').toLowerCase()===t.title.toLowerCase()&&x.kind===kind))s.tasks.push({id:id(),text:t.title,kind,domain:t.homeSection?'Rhythm':'General',dueDate:kind==='due'?(t.date||today()):'',cadence:kind==='recurring'?(t.cadence||'weekly'):'',customDays:t.customDays||1,nextAvailable:kind==='recurring'?(t.date||today()):'',done:false});
+  if(t.kind==='scheduled'&&t.time&&t.date&&!s.turns.some(x=>x.title===t.title&&x.date===t.date&&x.time===t.time))s.turns.push({id:id(),title:t.title,date:t.date,time:t.time,menuId:'',dismissed:false});
+ });
+ s.migrations.oldEaseDataV1=true;
+}
 function seed(s){
  s.menus=[
   {id:id(),name:'5pm',start:'17:00',end:'19:00',options:['Family','One task','Meditate','Read']},
@@ -79,6 +107,10 @@ function seed(s){
   {id:id(),text:'Review upcoming bills',kind:'available',domain:'Finances'},
   {id:id(),text:'Change HVAC filter',kind:'recurring',domain:'Home',cadence:'monthly',nextAvailable:today()},
   {id:id(),text:'Clothes',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today()},
+  {id:id(),text:'Tidy',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today()},
+  {id:id(),text:'Organize',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today()},
+  {id:id(),text:'Chickens',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today()},
+  {id:id(),text:'Clean — Floors',kind:'recurring',domain:'Home',cadence:'weekly',nextAvailable:today(),homeRotation:'clean',rotationIndex:0},
   {id:id(),text:'Closet work',kind:'available',domain:'Home'},
   {id:id(),text:'One current yard task',kind:'available',domain:'Yard'}
  ];
@@ -142,7 +174,8 @@ function enterTurn(idv){let t=state.turns.find(x=>x.id===idv);if(!t)return;let m
 function openMenuNow(mid){let m=state.menus.find(x=>x.id===mid);if(!m)return;show('ready');document.getElementById('couldList').innerHTML=`<div class="choiceGrid">${m.options.map(o=>`<button class="choice" onclick="enterChoice('${encodeURIComponent(o)}','')"><b>${esc(o)}</b><small>${esc(m.name)}</small></button>`).join('')}</div>`;document.getElementById('couldList').scrollIntoView({behavior:'smooth',block:'center'})}
 function leaveFocus(){activeFocus=null;renderFocus()}
 function holdCurrentFocus(){if(!activeFocus)return;state.held.unshift({id:id(),text:activeFocus.title,domain:'Return'});activeFocus=null;persist();toast('Ease will hold it')}
-function completeTask(tid){let t=state.tasks.find(x=>x.id===tid);if(!t)return;if(t.kind==='recurring'){let base=t.nextAvailable&&t.nextAvailable>today()?t.nextAvailable:today();t.nextAvailable=t.cadence==='daily'?addDays(base,1):t.cadence==='weekly'?addDays(base,7):addMonths(base,1);t.lastCompleted=today();toast('Completed · next instance held')}else{t.done=true;toast('Completed')}persist()}
+function nextRecurringDate(t,base){if(t.cadence==='daily')return addDays(base,1);if(t.cadence==='weekdays'){let d=addDays(base,1);while([0,6].includes(dateObj(d).getDay()))d=addDays(d,1);return d}if(t.cadence==='weekends'){let d=addDays(base,1);while(![0,6].includes(dateObj(d).getDay()))d=addDays(d,1);return d}if(t.cadence==='biweekly')return addDays(base,14);if(t.cadence==='quarterly')return addMonths(base,3);if(t.cadence==='yearly')return addMonths(base,12);if(t.cadence==='custom')return addDays(base,Math.max(1,Number(t.customDays)||1));return t.cadence==='weekly'?addDays(base,7):addMonths(base,1)}
+function completeTask(tid){let t=state.tasks.find(x=>x.id===tid);if(!t)return;if(t.kind==='recurring'){let base=t.nextAvailable&&t.nextAvailable>today()?t.nextAvailable:today();t.nextAvailable=nextRecurringDate(t,base);t.lastCompleted=today();if(t.homeRotation==='clean'){const cleanOptions=['Floors','Surfaces','Bathroom','Fridge','Containers'];t.rotationIndex=((Number(t.rotationIndex)||0)+1)%cleanOptions.length;t.text=`Clean — ${cleanOptions[t.rotationIndex]}`}toast('Completed · next instance held')}else{t.done=true;toast('Completed')}persist()}
 function dismissTurn(tid){let t=state.turns.find(x=>x.id===tid);if(t)t.dismissed=true;persist()}
 function deleteTurn(tid){state.turns=state.turns.filter(x=>x.id!==tid);persist()}
 function deleteHeld(hid){state.held=state.held.filter(x=>x.id!==hid);persist()}
@@ -169,10 +202,10 @@ function saveDaySketch(){let source=document.getElementById('daySketchText').val
  turns=turns.slice(0,2);could=could.slice(0,4);anchors=anchors.slice(0,3);held=held.slice(0,3);
  state.dayPlan={date:today(),source,anchors,turns,could,held};closeModal('shapeDayModal');persist();toast('Today is lightly held')}
 
-function openAddTask(){editTaskId=null;document.getElementById('taskModalTitle').textContent='Add task';document.getElementById('taskText').value='';document.getElementById('taskKind').value='available';document.getElementById('taskDomain').value='';document.getElementById('taskDue').value=today();document.getElementById('taskNext').value=today();document.getElementById('taskCadence').value='weekly';taskFormMode();openModal('taskModal')}
-function editTask(tid){let t=state.tasks.find(x=>x.id===tid);if(!t)return;editTaskId=tid;document.getElementById('taskModalTitle').textContent='Edit task';document.getElementById('taskText').value=t.text;document.getElementById('taskKind').value=t.kind;document.getElementById('taskDomain').value=t.domain||'';document.getElementById('taskDue').value=t.dueDate||today();document.getElementById('taskNext').value=t.nextAvailable||today();document.getElementById('taskCadence').value=t.cadence||'weekly';taskFormMode();openModal('taskModal')}
+function openAddTask(){editTaskId=null;document.getElementById('taskModalTitle').textContent='Add task';document.getElementById('taskText').value='';document.getElementById('taskKind').value='available';document.getElementById('taskDomain').value='';document.getElementById('taskDue').value=today();document.getElementById('taskNext').value=today();document.getElementById('taskCadence').value='weekly';document.getElementById('taskCustomDays').value='1';taskFormMode();openModal('taskModal')}
+function editTask(tid){let t=state.tasks.find(x=>x.id===tid);if(!t)return;editTaskId=tid;document.getElementById('taskModalTitle').textContent='Edit task';document.getElementById('taskText').value=t.text;document.getElementById('taskKind').value=t.kind;document.getElementById('taskDomain').value=t.domain||'';document.getElementById('taskDue').value=t.dueDate||today();document.getElementById('taskNext').value=t.nextAvailable||today();document.getElementById('taskCadence').value=t.cadence||'weekly';document.getElementById('taskCustomDays').value=t.customDays||1;taskFormMode();openModal('taskModal')}
 function taskFormMode(){let k=document.getElementById('taskKind').value;document.getElementById('dueFields').style.display=k==='due'?'block':'none';document.getElementById('recFields').style.display=k==='recurring'?'block':'none'}
-function saveTask(){let text=document.getElementById('taskText').value.trim();if(!text)return;let k=document.getElementById('taskKind').value;let t=editTaskId?state.tasks.find(x=>x.id===editTaskId):{id:id(),done:false};t.text=text;t.kind=k;t.domain=document.getElementById('taskDomain').value.trim();t.dueDate=k==='due'?document.getElementById('taskDue').value:'';t.cadence=k==='recurring'?document.getElementById('taskCadence').value:'';t.nextAvailable=k==='recurring'?document.getElementById('taskNext').value:'';if(!editTaskId)state.tasks.push(t);closeModal('taskModal');persist()}
+function saveTask(){let text=document.getElementById('taskText').value.trim();if(!text)return;let k=document.getElementById('taskKind').value;let t=editTaskId?state.tasks.find(x=>x.id===editTaskId):{id:id(),done:false};t.text=text;t.kind=k;t.domain=document.getElementById('taskDomain').value.trim();t.dueDate=k==='due'?document.getElementById('taskDue').value:'';t.cadence=k==='recurring'?document.getElementById('taskCadence').value:'';t.customDays=k==='recurring'?Math.max(1,Number(document.getElementById('taskCustomDays').value)||1):1;t.nextAvailable=k==='recurring'?document.getElementById('taskNext').value:'';if(!editTaskId)state.tasks.push(t);closeModal('taskModal');persist()}
 
 function populateTurnMenus(){let el=document.getElementById('turnMenu');if(!el)return;let cur=el.value;el.innerHTML='<option value="">No menu — just room</option>'+state.menus.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('');if([...el.options].some(o=>o.value===cur))el.value=cur}
 function openAddTurn(){editTurnId=null;document.getElementById('turnModalTitle').textContent='Make room';document.getElementById('turnTitle').value='';document.getElementById('turnDate').value=today();document.getElementById('turnTime').value='';populateTurnMenus();document.getElementById('turnMenu').value='';openModal('turnModal')}
