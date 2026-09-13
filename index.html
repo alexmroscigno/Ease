@@ -185,8 +185,10 @@ function openShapeDay(){let p=currentDayPlan();document.getElementById('daySketc
 function clearDayPlan(){state.dayPlan=null;persist();toast('Today is open again')}
 function cleanPhrase(x){return x.replace(/^\s*(and|also|then|want(?: some| to)?|maybe|could|do)\s+/i,'').replace(/[.]+$/,'').trim()}
 function titleCaseLight(x){x=cleanPhrase(x);return x?x.charAt(0).toUpperCase()+x.slice(1):x}
+function sketchTime(source){let m=source.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);if(!m)return'';let h=Number(m[1]),mins=m[2]||'00',suffix=(m[3]||'').toLowerCase();if(suffix==='pm'&&h<12)h+=12;if(suffix==='am'&&h===12)h=0;if(!suffix&&h>=1&&h<=6)h+=12;if(h>23)return'';return `${String(h).padStart(2,'0')}:${mins}`}
+function movementTurnsFromSketch(source){let m=source.match(/\b(?:moving|move|switching|transitioning)\s+between\s+([^.;\n]+)/i);if(!m)return{turns:[],remaining:source};const known=/\b(yard(?: work)?|football|job|work|home|house|clean(?:ing)?|writing|finances|planning|bowspring|workout|exercise|walk|kids|family|read(?:ing)?|cook(?:ing)?)\b/gi;let names=[],hit;while((hit=known.exec(m[1]))){let name=titleCaseLight(hit[1]);if(name.toLowerCase()==='work'&&names.some(x=>x.toLowerCase()==='yard work'))continue;if(!names.some(x=>x.toLowerCase()===name.toLowerCase()))names.push(name)}const time=sketchTime(source);let turns=names.slice(0,3).map((title,i)=>({id:id(),title,time:i===0?time:'',note:i===0&&time?'opening begins here':'room today'}));let remaining=source.replace(m[0],' ').replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[,;]?/i,' ');return{turns,remaining}}
 function saveDaySketch(){let source=document.getElementById('daySketchText').value.trim();if(!source){state.dayPlan={date:today(),source:'',anchors:[],turns:[],could:[],held:[]};closeModal('shapeDayModal');persist();return}
- let raw=source.replace(/\band\b/gi,',').split(/[\n;,/]+/).map(cleanPhrase).filter(Boolean);let anchors=[],turns=[],could=[],held=[];
+ let movement=movementTurnsFromSketch(source);let raw=movement.remaining.replace(/\band\b/gi,',').split(/[\n;,/]+/).map(cleanPhrase).filter(Boolean);let anchors=[],turns=[...movement.turns],could=[],held=[];
  const anchorRe=/\b(church|appointment|doctor|dentist|meeting|pickup|pick up|dropoff|drop off|reservation|service|practice|game at|party at)\b/i;
  const heldRe=/\b(after (?:the )?rain|when (?:the )?rain|until (?:the )?rain|after it stops raining|when it stops raining|waiting for|once .* (?:arrives|happens|stops|opens))\b/i;
  const turnRe=/\b(work|home|house|clean|cleaning|writing|finances|planning|bow|bowspring)\b/i;
@@ -199,7 +201,7 @@ function saveDaySketch(){let source=document.getElementById('daySketchText').val
    could.push({...item,note:'possibility'});
  });
  // Keep the surface intentionally small. Extra possibilities remain in the sentence but do not all crowd Ready.
- turns=turns.slice(0,2);could=could.slice(0,4);anchors=anchors.slice(0,3);held=held.slice(0,3);
+ turns=turns.slice(0,3);could=could.slice(0,4);anchors=anchors.slice(0,3);held=held.slice(0,3);
  state.dayPlan={date:today(),source,anchors,turns,could,held};closeModal('shapeDayModal');persist();toast('Today is lightly held')}
 
 function openAddTask(){editTaskId=null;document.getElementById('taskModalTitle').textContent='Add task';document.getElementById('taskText').value='';document.getElementById('taskKind').value='available';document.getElementById('taskDomain').value='';document.getElementById('taskDue').value=today();document.getElementById('taskNext').value=today();document.getElementById('taskCadence').value='weekly';document.getElementById('taskCustomDays').value='1';taskFormMode();openModal('taskModal')}
